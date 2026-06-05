@@ -328,6 +328,10 @@ async def entrypoint(ctx: JobContext) -> None:
             voice_id=voice_id,
             model="eleven_flash_v2_5",
             api_key=os.getenv("ELEVENLABS_API_KEY"),
+            # Default is 180s — keep the WS alive longer so natural pauses
+            # in conversation (caller thinking) don't trigger reconnects
+            # (the "ElevenLabs websocket closed unexpectedly" warnings).
+            inactivity_timeout=600,
         )
     else:
         # OpenAI TTS — uses LLM_API_KEY. Voice options: alloy, echo, fable,
