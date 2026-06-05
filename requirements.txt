@@ -1,0 +1,36 @@
+# Core AI / RAG
+sentence-transformers==3.3.1
+faiss-cpu==1.9.0
+langchain==0.3.14
+langchain-community==0.3.14
+langchain-openai==0.3.0
+langchain-anthropic==0.3.0
+
+# LLM providers
+openai==1.58.1
+anthropic==0.40.0
+groq==0.12.0
+
+# Document loading
+pypdf==5.1.0
+gitpython==3.1.43
+
+# API
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+python-dotenv==1.0.1
+httpx==0.28.1
+
+# Cal.com / calendar
+# (pure httpx calls — no extra SDK needed)
+
+# Voice (Phase 3 — install separately when needed)
+# livekit-agents==0.12.x
+# livekit-plugins-deepgram
+# livekit-plugins-elevenlabs
+# livekit-plugins-openai
+# twilio==9.x
+
+# Evals
+# (Phase 5 — standard library + openai judge)

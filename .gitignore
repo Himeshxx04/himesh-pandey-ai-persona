@@ -1,0 +1,48 @@
+# Secrets
+.env
+
+# Corpus — personal data, not for public repo
+corpus/resume.pdf
+corpus/about_me.md
+corpus/github/
+
+# FAISS index (built from corpus at runtime)
+corpus/faiss_index/
+*.faiss
+*.pkl
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (frontend)
+node_modules/
+frontend/dist/
+frontend/.env
+
+# Logs
+*.log
+logs/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
