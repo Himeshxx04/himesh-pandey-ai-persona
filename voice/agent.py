@@ -339,12 +339,12 @@ async def entrypoint(ctx: JobContext) -> None:
 def prewarm(proc: JobProcess) -> None:
     """
     Runs ONCE per entrypoint process before any job is dispatched.
-    Loads the FAISS retriever + Silero VAD into the process so the first
-    call doesn't pay any cold-start cost. The inference subprocess does
-    NOT run this function (it's a different process pool).
+    Only loads Silero VAD here. The FAISS retriever loads lazily on the
+    first on_user_turn_completed call — avoids MemoryError in the job
+    subprocess on Python 3.14 when uvicorn is also running.
+    On Render (separate services) the full prewarm can be re-enabled.
     """
-    logger.info("prewarm: loading retriever + VAD...")
-    proc.userdata["retriever"] = _get_retriever()
+    logger.info("prewarm: loading VAD...")
     proc.userdata["vad"] = silero.VAD.load()
     logger.info("prewarm: done.")
 
