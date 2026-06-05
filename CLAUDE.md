@@ -198,16 +198,16 @@ curl -X POST http://localhost:8000/ask \
 - [x] about_me.md → corpus/
 - [x] .gitignore + requirements.txt + .env.example
 - [x] CLAUDE.md (this file)
-- [ ] `scripts/ingest_github.py` — clone two flagship repos, extract README + git log
-- [ ] `persona/ingest.py` — load all corpus docs → chunk → FAISS index
-- [ ] `persona/retriever.py` — FAISS retriever returning chunks + source metadata
-- [ ] `persona/prompts.py` — system prompt + guardrails
-- [ ] `persona/llm.py` — provider-agnostic LLM wrapper
-- [ ] `persona/brain.py` — Brain class tying it all together
-- [ ] `persona/tools/booking.py` — Cal.com stub (clean interface)
-- [ ] `api/main.py` — FastAPI POST /ask + GET /health
-- [ ] `data/golden_qa.jsonl` — 5-10 grounded Q&A pairs
-- [ ] Smoke-test: `python -c "from persona.brain import Brain; b=Brain(); print(b.answer('introduce yourself', []))"` passes
+- [x] `scripts/ingest_github.py` — clone two flagship repos, extract README + git log
+- [x] `persona/ingest.py` — load all corpus docs → chunk → FAISS index (17 docs → 139 chunks)
+- [x] `persona/retriever.py` — FAISS retriever returning chunks + source metadata (verified)
+- [x] `persona/prompts.py` — system prompt + guardrails
+- [x] `persona/llm.py` — provider-agnostic LLM wrapper (openai/anthropic/groq)
+- [x] `persona/brain.py` — Brain class tying it all together
+- [x] `persona/tools/booking.py` — Cal.com stub (clean interface)
+- [x] `api/main.py` — FastAPI POST /ask + GET /health
+- [x] `data/golden_qa.jsonl` — 10 grounded Q&A pairs (incl. 2 guardrail tests)
+- [ ] Smoke-test: Brain.answer() end-to-end with real LLM key
 - [ ] git commit: "phase-1: shared brain + FastAPI /ask"
 
 ### Phase 2 — Calendar Integration
