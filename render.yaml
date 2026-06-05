@@ -1,0 +1,101 @@
+services:
+  # ── 1. FastAPI chat backend ─────────────────────────────────────────────
+  - type: web
+    name: himesh-persona-api
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+      python scripts/decode_corpus.py
+      python scripts/ingest_github.py
+      python -c "from persona.ingest import build_index; build_index(force=True)"
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: RESUME_B64
+        sync: false          # base64 of resume.pdf — generate with: base64 -w0 corpus/resume.pdf
+      - key: ABOUT_ME_B64
+        sync: false          # base64 of corpus/about_me.md
+      - key: LLM_PROVIDER
+        value: openai
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      - key: LLM_API_KEY
+        sync: false          # set in Render dashboard — never in YAML
+      - key: CALCOM_API_KEY
+        sync: false
+      - key: CALCOM_EVENT_TYPE_ID
+        value: "5911501"
+      - key: CALCOM_USERNAME
+        value: himesh-pandey-hvlicb
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: RESUME_PATH
+        value: corpus/resume.pdf
+      - key: ABOUT_ME_PATH
+        value: corpus/about_me.md
+      - key: FAISS_INDEX_PATH
+        value: corpus/faiss_index
+    healthCheckPath: /health
+
+  # ── 2. LiveKit voice worker ─────────────────────────────────────────────
+  # Must be "background worker" (always-on) so it can receive SIP calls 24/7.
+  # Free plan workers spin down after 15 min — upgrade to Starter ($7/mo) OR
+  # use fly.io free tier (see voice/README.md). Starter is recommended here.
+  - type: worker
+    name: himesh-persona-voice
+    runtime: python
+    region: oregon
+    plan: starter           # always-on required; free plan spins down
+    buildCommand: |
+      pip install -r requirements.txt
+      python scripts/decode_corpus.py
+      python voice/agent.py download-files
+      python scripts/ingest_github.py
+      python -c "from persona.ingest import build_index; build_index(force=True)"
+    startCommand: python voice/agent.py start
+    envVars:
+      - key: RESUME_B64
+        sync: false
+      - key: ABOUT_ME_B64
+        sync: false
+      - key: LLM_PROVIDER
+        value: openai
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      - key: LLM_API_KEY
+        sync: false
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: CALCOM_API_KEY
+        sync: false
+      - key: CALCOM_EVENT_TYPE_ID
+        value: "5911501"
+      - key: CALCOM_USERNAME
+        value: himesh-pandey-hvlicb
+      - key: RESUME_PATH
+        value: corpus/resume.pdf
+      - key: ABOUT_ME_PATH
+        value: corpus/about_me.md
+      - key: FAISS_INDEX_PATH
+        value: corpus/faiss_index
