@@ -207,8 +207,8 @@ curl -X POST http://localhost:8000/ask \
 - [x] `persona/tools/booking.py` — Cal.com stub (clean interface)
 - [x] `api/main.py` — FastAPI POST /ask + GET /health
 - [x] `data/golden_qa.jsonl` — 10 grounded Q&A pairs (incl. 2 guardrail tests)
-- [ ] Smoke-test: Brain.answer() end-to-end with real LLM key
-- [ ] git commit: "phase-1: shared brain + FastAPI /ask"
+- [x] Smoke-test: Brain.answer() end-to-end — all 6 tests passing (MCP facts, intro, injection, salary, RAG formula, internship)
+- [x] git commit: "phase-1: shared brain + FastAPI /ask"
 
 ### Phase 2 — Calendar Integration
 - [ ] Cal.com account setup + API key
