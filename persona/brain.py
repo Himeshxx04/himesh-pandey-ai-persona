@@ -155,9 +155,14 @@ class Brain:
                     text="My calendar looks pretty open — let me know what day works for you and I'll confirm a slot.",
                     sources=[],
                 )
-            slot_list = "\n".join(f"- {s.formatted}" for s in slots[:5])
+            slot_lines = "\n".join(
+                f"- {s.formatted}  [utc_ref: {s.start_utc}]" for s in slots[:6]
+            )
             messages = build_prompt(
-                context + f"\n\n[AVAILABLE SLOTS FROM CALENDAR]\n{slot_list}",
+                context + (
+                    f"\n\n[AVAILABLE SLOTS FROM CALENDAR — next 7 days]\n{slot_lines}\n"
+                    "[When the user picks a slot, ask for their name and email, then call complete_booking.]"
+                ),
                 history,
                 message,
             )
@@ -170,10 +175,10 @@ class Brain:
 
     def complete_booking(
         self,
-        start: str,
+        start_utc: str,
         attendee_name: str,
         attendee_email: str,
         notes: str = "",
     ) -> BookingConfirmation:
         """Called explicitly when name, email, and slot are all confirmed."""
-        return self._booking.book_slot(start, attendee_name, attendee_email, notes)
+        return self._booking.book_slot(start_utc, attendee_name, attendee_email, notes)
