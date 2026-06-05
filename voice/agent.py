@@ -48,6 +48,7 @@ from livekit.agents import (
     ChatContext,
     ChatMessage,
     JobContext,
+    JobProcess,
     RunContext,
     WorkerOptions,
     function_tool,
@@ -62,8 +63,12 @@ try:
 except Exception:
     HAS_TURN_DETECTOR = False
 
-from persona.ingest import build_index
-from persona.retriever import Retriever
+# Lightweight persona imports only. The HEAVY retriever (sentence-transformers
+# + sklearn + scipy + FAISS) is loaded lazily inside _get_retriever() so that:
+#   (a) the inference subprocess (which never needs the retriever, only the
+#       turn-detector + VAD models) doesn't pay the import cost, and
+#   (b) the entrypoint job pool warms it once via prewarm_fnc, ahead of any
+#       call, so the first user turn isn't slowed by retriever cold-start.
 from persona.prompts import SYSTEM_PROMPT
 from persona.tools.booking import BookingTool
 
@@ -88,13 +93,26 @@ VOICE-OUTPUT RULES (this conversation is being SPOKEN over a phone):
 """
 
 
-# ── Build the retriever ONCE at module import (warm worker) ────────────────
-# build_index() is cached on disk — first import takes ~5s, every reload is fast.
-logger.info("loading FAISS retriever for voice agent...")
-_store = build_index()
-_retriever = Retriever(_store, top_k=5, irrelevance_threshold=0.10)
-_booking = BookingTool()
-logger.info("retriever ready.")
+# ── Lazy singletons ────────────────────────────────────────────────────────
+# Heavy retriever is built on first access (inside the entrypoint process pool,
+# via prewarm_fnc). The inference subprocess never calls these.
+_retriever = None
+_booking = BookingTool()    # lightweight — just an httpx wrapper
+
+
+def _get_retriever():
+    """Lazy-build the FAISS retriever. Called from prewarm_fnc and on_user_turn_completed."""
+    global _retriever
+    if _retriever is None:
+        # Deferred imports — these pull sentence-transformers + sklearn + scipy + FAISS.
+        from persona.ingest import build_index
+        from persona.retriever import Retriever
+
+        logger.info("loading FAISS retriever for voice agent...")
+        store = build_index()
+        _retriever = Retriever(store, top_k=5, irrelevance_threshold=0.10)
+        logger.info("retriever ready (%d index).", store.index.ntotal if hasattr(store, "index") else -1)
+    return _retriever
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -126,8 +144,9 @@ class HimeshAgent(Agent):
             return
 
         try:
-            chunks = _retriever.retrieve(user_text)
-            context = _retriever.format_context(chunks)
+            retriever = _get_retriever()
+            chunks = retriever.retrieve(user_text)
+            context = retriever.format_context(chunks)
             if context:
                 turn_ctx.add_message(
                     role="system",
@@ -258,7 +277,7 @@ async def entrypoint(ctx: JobContext) -> None:
             model="eleven_flash_v2_5",
             api_key=os.getenv("ELEVENLABS_API_KEY"),
         ),
-        vad=silero.VAD.load(),
+        vad=ctx.proc.userdata.get("vad") or silero.VAD.load(),
     )
 
     # Add ML turn-detector if the plugin model has been downloaded.
@@ -286,5 +305,24 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
 
+def prewarm(proc: JobProcess) -> None:
+    """
+    Runs ONCE per entrypoint process before any job is dispatched.
+    Loads the FAISS retriever + Silero VAD into the process so the first
+    call doesn't pay any cold-start cost. The inference subprocess does
+    NOT run this function (it's a different process pool).
+    """
+    logger.info("prewarm: loading retriever + VAD...")
+    proc.userdata["retriever"] = _get_retriever()
+    proc.userdata["vad"] = silero.VAD.load()
+    logger.info("prewarm: done.")
+
+
 if __name__ == "__main__":
-    agents.cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    agents.cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            prewarm_fnc=prewarm,
+            agent_name="himesh-persona",   # shows up in LiveKit Console dropdown + Twilio dispatch rule
+        )
+    )
