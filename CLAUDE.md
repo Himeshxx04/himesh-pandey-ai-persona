@@ -240,10 +240,12 @@ curl -X POST http://localhost:8000/ask \
 - [ ] OpenAI / Deepgram / ElevenLabs / Cal.com: leave keys active unless you want fresh start
 
 ### Phase 4 — Chat UI
-- [ ] React + Vite + Tailwind frontend
-- [ ] Chat component, message history, source citations display
-- [ ] Deploy to Vercel
-- [ ] Test booking flow from chat UI
+- [x] React + Vite + Tailwind frontend (Hero, ChatPanel, CallButton, FeaturedProjects, TechStack, PhoneFallback, Aurora, all components)
+- [x] SSE streaming chat with source citations
+- [x] Browser voice call via LiveKit (CallButton.tsx)
+- [x] Outbound callback via /voice/callback
+- [ ] Deploy to Vercel (frontend) + Render (backend + voice worker)
+- [ ] Test full booking flow from deployed chat UI
 - [ ] git commit: "phase-4: chat frontend deployed"
 
 ### Phase 5 — Evals + Deliverables
