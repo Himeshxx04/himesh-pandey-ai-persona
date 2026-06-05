@@ -227,11 +227,12 @@ curl -X POST http://localhost:8000/ask \
 - [x] Voice deps installed (livekit-agents 1.5.17 + plugins), turn-detector + silero models cached
 - [x] `voice/README.md` — local dev quickstart + SIP wiring playbook
 - [x] **Local Console test PASSED** — agent picks up, greets, RAG works, ElevenLabs Brian (premade voice id `nPczCjzI2devNBz1zQrb`) speaks. Bonus: multilingual works — Hindi STT via Deepgram nova-3 `language="multi"` + GPT-4o-mini replies in Hindi.
-- [ ] **NEXT: Wire Twilio SIP** via LiveKit Telephony wizard + Dispatch Rule
-- [ ] First real phone call from caller's phone to +1 number
-- [ ] Latency test: `voice/test_latency.py` — first-response <2s
-- [ ] Deploy worker to Render or Fly.io (need always-on for 7-day live window)
-- [ ] git commit: "phase-3: livekit voice agent"  ← partial commits along the way
+- [x] Twilio SIP wired via LiveKit Telephony wizard + Dispatch Rule
+- [x] First real phone call WORKING — +1 (937) 888-3660 reaches the agent
+- [x] Booking flow tested over voice; email normalization bug found + fixed (past-date guard added)
+- [ ] Latency test: measure first-response time end-to-end, target <2s
+- [ ] Deploy worker to Render starter plan (always-on for 7-day live window)
+- [ ] git commit: "phase-3: complete"
 
 ### Post-submission cleanup (do once 7-day live window ends)
 - [ ] Twilio: Release the +1 number (stops $1.15/mo recurring charge)
