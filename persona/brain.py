@@ -49,9 +49,9 @@ class Brain:
         score_threshold: minimum cosine similarity to include a chunk
     """
 
-    def __init__(self, top_k: int = 5, score_threshold: float = 0.25):
+    def __init__(self, top_k: int = 5, irrelevance_threshold: float = 0.10):
         store = build_index()
-        self._retriever = Retriever(store, top_k=top_k, score_threshold=score_threshold)
+        self._retriever = Retriever(store, top_k=top_k, irrelevance_threshold=irrelevance_threshold)
         self._booking = BookingTool()
 
     # ── Booking intent detection ────────────────────────────────────────────

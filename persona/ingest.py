@@ -25,7 +25,7 @@ ABOUT_ME_PATH = os.getenv("ABOUT_ME_PATH", "corpus/about_me.md")
 GITHUB_DIR = Path("corpus/github")
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "corpus/faiss_index")
 
-EMBED_MODEL = "all-MiniLM-L6-v2"
+EMBED_MODEL = "multi-qa-MiniLM-L6-cos-v1"  # asymmetric Q->doc retrieval, better for QA
 
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 80
