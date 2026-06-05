@@ -226,8 +226,8 @@ curl -X POST http://localhost:8000/ask \
 - [x] Booking exposed as @function_tool decorators (check_availability + book_slot)
 - [x] Voice deps installed (livekit-agents 1.5.17 + plugins), turn-detector + silero models cached
 - [x] `voice/README.md` — local dev quickstart + SIP wiring playbook
-- [ ] **NEXT: Local playground test** — `python voice/agent.py dev` → https://agents-playground.livekit.io → verify greeting, RAG, booking, guardrail, barge-in
-- [ ] Wire Twilio SIP via LiveKit Telephony wizard + Dispatch Rule
+- [x] **Local Console test PASSED** — agent picks up, greets, RAG works, ElevenLabs Brian (premade voice id `nPczCjzI2devNBz1zQrb`) speaks. Bonus: multilingual works — Hindi STT via Deepgram nova-3 `language="multi"` + GPT-4o-mini replies in Hindi.
+- [ ] **NEXT: Wire Twilio SIP** via LiveKit Telephony wizard + Dispatch Rule
 - [ ] First real phone call from caller's phone to +1 number
 - [ ] Latency test: `voice/test_latency.py` — first-response <2s
 - [ ] Deploy worker to Render or Fly.io (need always-on for 7-day live window)
