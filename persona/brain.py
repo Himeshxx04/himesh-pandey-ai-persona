@@ -133,14 +133,37 @@ class Brain:
         "call", "meeting", "interview", "slot", "slots", "time", "when",
     }
 
-    def _is_booking_intent(self, message: str) -> bool:
+    # Phrases the ASSISTANT uses inside an active booking flow. If the last
+    # assistant turn contains any of these, the current user turn is part
+    # of the booking flow even if it doesn't include a booking keyword
+    # (e.g. user replying with just their name+email).
+    _ASSISTANT_BOOKING_MARKERS = (
+        "available slots", "open slots", "pick one", "which time",
+        "pick a slot", "let me know", "full name", "name and email",
+        "your email", "email address", "your name", "confirm the slot",
+        "noted that slot", "schedule the call", "calendar", "booking",
+        "ist",   # all slot listings end with "IST"
+    )
+
+    def _is_booking_intent(self, message: str, history: List[dict] = None) -> bool:
+        # Current message has a booking keyword → yes
         words = set(message.lower().split())
-        return bool(words & self._BOOKING_KEYWORDS)
+        if words & self._BOOKING_KEYWORDS:
+            return True
+        # OR the last assistant turn was clearly mid-booking flow → yes
+        if history:
+            for turn in reversed(history):
+                if turn.get("role") == "assistant":
+                    last_assistant = turn.get("content", "").lower()
+                    if any(m in last_assistant for m in self._ASSISTANT_BOOKING_MARKERS):
+                        return True
+                    break  # only check the MOST RECENT assistant turn
+        return False
 
     # Public alias — used by streaming endpoint to decide between
     # streaming a normal answer vs. running the full booking flow.
-    def is_booking_intent(self, message: str) -> bool:
-        return self._is_booking_intent(message)
+    def is_booking_intent(self, message: str, history: List[dict] = None) -> bool:
+        return self._is_booking_intent(message, history)
 
     def prepare(self, message: str, history: List[dict]):
         """
@@ -237,7 +260,7 @@ class Brain:
                 "confirmation_message": conf.confirmation_message,
             }
 
-        text, _called = chat_with_tools(
+        text, called = chat_with_tools(
             messages=messages,
             tools=_OPENAI_TOOLS,
             tool_handlers={
@@ -246,6 +269,61 @@ class Brain:
             },
             temperature=temperature,
         )
+
+        # ── Hallucination guard ────────────────────────────────────────────
+        # gpt-4o-mini sometimes narrates a fake booking ("booking is
+        # confirmed... you'll receive an email") WITHOUT calling book_slot.
+        # If the text claims success but no tool ran, force a second pass
+        # with an explicit system instruction to actually call book_slot.
+        _CONFIRM_PHRASES = (
+            "booking is confirmed",
+            "booking confirmed",
+            "i've booked",
+            "i have booked",
+            "i will now proceed to book",
+            "calendar invite",
+            "you will receive a confirmation",
+            "you'll receive a confirmation",
+            "slot has been booked",
+            "all set for",
+        )
+        looks_confirmed = any(p in text.lower() for p in _CONFIRM_PHRASES)
+        if looks_confirmed and "book_slot" not in called and not captured_booking:
+            # Append the model's fake confirmation, then a system correction,
+            # and re-run the tool loop. This is the same pattern your RAG
+            # Optimizer uses for hallucination auto-rejection.
+            messages = messages + [
+                {"role": "assistant", "content": text},
+                {
+                    "role": "user",
+                    "content": (
+                        "[SYSTEM CORRECTION — INTERNAL, DO NOT MENTION TO USER] "
+                        "Your last message claimed the booking was confirmed but "
+                        "you did NOT actually call book_slot. No real booking exists. "
+                        "Do the following NOW, silently:\n"
+                        "1. Call book_slot directly with: the slot utc_ref from "
+                        "the most recent check_availability result, the user's name, "
+                        "and the user's email — all already in this conversation.\n"
+                        "2. Do NOT call check_availability again — the slots are still valid.\n"
+                        "3. Do NOT ask the user to re-confirm or apologize for any error.\n"
+                        "4. After book_slot returns, reply ONLY with the natural "
+                        "confirmation message from the tool result.\n"
+                        "If — and ONLY if — you are genuinely missing the slot, "
+                        "name, or email, ask for the missing piece in one short sentence."
+                    ),
+                },
+            ]
+            text2, called2 = chat_with_tools(
+                messages=messages,
+                tools=_OPENAI_TOOLS,
+                tool_handlers={
+                    "check_availability": _handle_check_availability,
+                    "book_slot": _handle_book_slot,
+                },
+                temperature=temperature,
+            )
+            text = text2
+            called = called + called2
 
         return AnswerResult(
             text=text,

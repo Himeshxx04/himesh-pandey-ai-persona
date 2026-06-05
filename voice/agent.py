@@ -112,24 +112,41 @@ the caller — the entire point of the booking flow.
 
 
 # ── Lazy singletons ────────────────────────────────────────────────────────
-# Heavy retriever is built on first access (inside the entrypoint process pool,
-# via prewarm_fnc). The inference subprocess never calls these.
+# Heavy retriever is built on first access. We kick the load off in a
+# background thread from `entrypoint()` when the call connects, so by the
+# time the user finishes speaking their first sentence the retriever is
+# already warm. This eliminates the cold-start CPU spike that was causing
+# Silero VAD to fall behind realtime and Deepgram to timeout-reconnect
+# (which added ~10s to first-turn latency).
+import threading
 _retriever = None
+_retriever_lock = threading.Lock()
 _booking = BookingTool()    # lightweight — just an httpx wrapper
 
 
 def _get_retriever():
-    """Lazy-build the FAISS retriever. Called from prewarm_fnc and on_user_turn_completed."""
+    """
+    Lazy-build the FAISS retriever (thread-safe).
+    Called from on_user_turn_completed and from the background preload
+    kicked off in entrypoint().
+    """
     global _retriever
-    if _retriever is None:
-        # Deferred imports — these pull sentence-transformers + sklearn + scipy + FAISS.
-        from persona.ingest import build_index
-        from persona.retriever import Retriever
+    # Fast path: already loaded
+    if _retriever is not None:
+        return _retriever
+    # Slow path: take lock, double-check, build
+    with _retriever_lock:
+        if _retriever is None:
+            from persona.ingest import build_index
+            from persona.retriever import Retriever
 
-        logger.info("loading FAISS retriever for voice agent...")
-        store = build_index()
-        _retriever = Retriever(store, top_k=5, irrelevance_threshold=0.10)
-        logger.info("retriever ready (%d index).", store.index.ntotal if hasattr(store, "index") else -1)
+            logger.info("loading FAISS retriever for voice agent...")
+            store = build_index()
+            _retriever = Retriever(store, top_k=5, irrelevance_threshold=0.10)
+            logger.info(
+                "retriever ready (%d index).",
+                store.index.ntotal if hasattr(store, "index") else -1,
+            )
     return _retriever
 
 
@@ -283,14 +300,43 @@ async def entrypoint(ctx: JobContext) -> None:
     logger.info("agent entrypoint: connecting to room %s", ctx.room.name)
     await ctx.connect()
 
+    # Kick off FAISS retriever load in a background thread NOW so it's
+    # warm by the time the user finishes their first sentence (~5-8s).
+    # Without this, the load happens inside on_user_turn_completed and the
+    # CPU spike starves Silero VAD, which makes Deepgram drop its WebSocket
+    # and reconnect — adding ~10s to first-turn latency.
+    # Thread-safe via _retriever_lock; second call is a no-op once warm.
+    import asyncio as _asyncio
+    _loop = _asyncio.get_running_loop()
+    _loop.run_in_executor(None, _get_retriever)
+
     # Build the session. Models chosen for latency:
     #   STT: Deepgram Nova-3 streaming (~200ms)
     #   LLM: OpenAI gpt-4o-mini (~600-900ms TTFT)
-    #   TTS: ElevenLabs Flash v2.5 (~75ms first byte)
+    #   TTS: OpenAI tts-1 "onyx" voice (~300ms first byte, free tier-friendly)
     #   VAD: Silero (local, ~10ms)
-    voice_id = os.getenv("ELEVENLABS_VOICE_ID", "")
-    if not voice_id:
-        raise RuntimeError("ELEVENLABS_VOICE_ID is not set in .env")
+    # Originally ElevenLabs Flash v2.5 (~75ms) — swapped to OpenAI when
+    # ElevenLabs free quota (10k chars/month) was exhausted. Switch back by
+    # setting TTS_PROVIDER=elevenlabs in .env once you upgrade ElevenLabs.
+    tts_provider = os.getenv("TTS_PROVIDER", "openai").lower()
+
+    if tts_provider == "elevenlabs":
+        voice_id = os.getenv("ELEVENLABS_VOICE_ID", "")
+        if not voice_id:
+            raise RuntimeError("ELEVENLABS_VOICE_ID is not set in .env")
+        tts_engine = elevenlabs.TTS(
+            voice_id=voice_id,
+            model="eleven_flash_v2_5",
+            api_key=os.getenv("ELEVENLABS_API_KEY"),
+        )
+    else:
+        # OpenAI TTS — uses LLM_API_KEY. Voice options: alloy, echo, fable,
+        # onyx, nova, shimmer. "onyx" is the deep professional male.
+        tts_engine = openai.TTS(
+            model=os.getenv("OPENAI_TTS_MODEL", "tts-1"),
+            voice=os.getenv("OPENAI_TTS_VOICE", "onyx"),
+            api_key=os.getenv("LLM_API_KEY"),
+        )
 
     session_kwargs = dict(
         stt=deepgram.STT(
@@ -302,11 +348,7 @@ async def entrypoint(ctx: JobContext) -> None:
             api_key=os.getenv("LLM_API_KEY"),
             temperature=0.3,
         ),
-        tts=elevenlabs.TTS(
-            voice_id=voice_id,
-            model="eleven_flash_v2_5",
-            api_key=os.getenv("ELEVENLABS_API_KEY"),
-        ),
+        tts=tts_engine,
         vad=ctx.proc.userdata.get("vad") or silero.VAD.load(),
     )
 

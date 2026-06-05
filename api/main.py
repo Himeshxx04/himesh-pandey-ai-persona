@@ -202,7 +202,9 @@ def ask_stream(req: AskRequest):
             history = [{"role": m.role, "content": m.content} for m in req.history]
 
             # Booking intent → non-streaming, return full answer in 'done'
-            if brain.is_booking_intent(req.message):
+            # Pass history so multi-turn booking flows (e.g. user replying with
+            # just their name+email) stay on the tool-using path.
+            if brain.is_booking_intent(req.message, history):
                 result = brain.answer(req.message, history)
                 yield _sse("sources", {"sources": result.sources})
                 # send the full text in one token event so frontend can render it
