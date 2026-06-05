@@ -30,12 +30,14 @@ httpx==0.28.1
 # Cal.com / calendar
 # (pure httpx calls — no extra SDK needed)
 
-# Voice (Phase 3 — install separately when needed)
-# livekit-agents==0.12.x
-# livekit-plugins-deepgram
-# livekit-plugins-elevenlabs
-# livekit-plugins-openai
-# twilio==9.x
+# Voice (Phase 3)
+livekit-agents>=1.0.0,<2.0.0
+livekit-plugins-deepgram>=1.0.0
+livekit-plugins-elevenlabs>=1.0.0
+livekit-plugins-openai>=1.0.0
+livekit-plugins-silero>=1.0.0     # local VAD model for turn-detection / barge-in
+livekit-plugins-turn-detector>=1.0.0   # ML-based end-of-utterance detection
+twilio>=9.0.0                      # for any direct Twilio API calls (number config, status)
 
 # Evals
 # (Phase 5 — standard library + openai judge)

@@ -218,14 +218,26 @@ curl -X POST http://localhost:8000/ask \
 - [x] git commit: "phase-2: cal.com booking tool"
 
 ### Phase 3 — Voice Agent  ← USE OPUS 4.7 xhigh for architecture + hard problems
-- [ ] Twilio US number purchase + SIP trunk config
-- [ ] LiveKit Cloud project setup + credentials in .env
-- [ ] `voice/agent.py` — LiveKit Agents SDK (Python) with Deepgram STT + ElevenLabs TTS + Brain
-- [ ] Barge-in handling (LiveKit native, verify no crash)
-- [ ] Latency test: measure first-response time end-to-end, target <2s
-- [ ] Booking flow works over voice (name/email collection + confirm)
-- [ ] Deploy voice agent to Render (or fly.io)
-- [ ] git commit: "phase-3: livekit voice agent"
+- [x] LiveKit Cloud project setup ("voicegent", US region) + credentials in .env
+- [x] Deepgram + ElevenLabs accounts + API keys + Voice ID in .env
+- [x] Twilio account upgraded ($20 credit) + US +1 number purchased + creds in .env
+- [x] `voice/agent.py` — LiveKit Agents 1.5 (Python) with Deepgram Nova-3 STT + OpenAI gpt-4o-mini LLM + ElevenLabs Flash v2.5 TTS + Silero VAD + Multilingual turn-detector
+- [x] Shared brain: agent imports `persona.Retriever` + `persona.prompts.SYSTEM_PROMPT` + `BookingTool` directly (no HTTP hop). RAG via `on_user_turn_completed` lifecycle hook.
+- [x] Booking exposed as @function_tool decorators (check_availability + book_slot)
+- [x] Voice deps installed (livekit-agents 1.5.17 + plugins), turn-detector + silero models cached
+- [x] `voice/README.md` — local dev quickstart + SIP wiring playbook
+- [ ] **NEXT: Local playground test** — `python voice/agent.py dev` → https://agents-playground.livekit.io → verify greeting, RAG, booking, guardrail, barge-in
+- [ ] Wire Twilio SIP via LiveKit Telephony wizard + Dispatch Rule
+- [ ] First real phone call from caller's phone to +1 number
+- [ ] Latency test: `voice/test_latency.py` — first-response <2s
+- [ ] Deploy worker to Render or Fly.io (need always-on for 7-day live window)
+- [ ] git commit: "phase-3: livekit voice agent"  ← partial commits along the way
+
+### Post-submission cleanup (do once 7-day live window ends)
+- [ ] Twilio: Release the +1 number (stops $1.15/mo recurring charge)
+- [ ] LiveKit: Delete the API key pasted in chat history (rotate)
+- [ ] Render/Fly: Stop or delete the voice worker service
+- [ ] OpenAI / Deepgram / ElevenLabs / Cal.com: leave keys active unless you want fresh start
 
 ### Phase 4 — Chat UI
 - [ ] React + Vite + Tailwind frontend
