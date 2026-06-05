@@ -101,34 +101,34 @@ def process_repo(repo: dict):
     readme = extract_readme(repo_dir)
     if readme:
         (out_dir / "README.md").write_text(readme, encoding="utf-8")
-        print(f"  ✓ README ({len(readme)} chars)")
+        print(f"  [ok] README ({len(readme)} chars)")
 
     git_log = extract_git_log(repo_dir)
     if git_log:
         (out_dir / "git_log.txt").write_text(git_log, encoding="utf-8")
-        print(f"  ✓ git log ({git_log.count(chr(10))+1} commits)")
+        print(f"  [ok] git log ({git_log.count(chr(10))+1} commits)")
 
     file_tree = extract_file_tree(repo_dir)
     if file_tree:
         (out_dir / "file_tree.txt").write_text(file_tree, encoding="utf-8")
-        print(f"  ✓ file tree")
+        print(f"  [ok] file tree")
 
     for fname, content in extract_docs(repo_dir):
         safe_name = fname.replace("/", "_").replace("\\", "_")
         (out_dir / safe_name).write_text(content, encoding="utf-8")
-        print(f"  ✓ doc: {fname}")
+        print(f"  [ok] doc: {fname}")
 
 
 def main():
     GITHUB_DIR.mkdir(parents=True, exist_ok=True)
     for repo in REPOS:
-        print(f"\n── {repo['name']} ──")
+        print(f"\n-- {repo['name']} --")
         try:
             process_repo(repo)
         except Exception as e:
             print(f"  ERROR: {e}")
     print("\n[github] Done. Now rebuild the FAISS index:")
-    print('  python -c "from persona.ingest import build_index; build_index(force=True)"')
+    print("  python -c \"from persona.ingest import build_index; build_index(force=True)\"")
 
 
 if __name__ == "__main__":

@@ -12,11 +12,11 @@ from pathlib import Path
 from typing import List
 
 from dotenv import load_dotenv
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 load_dotenv()
 
@@ -111,7 +111,7 @@ def build_index(force: bool = False) -> FAISS:
         )
 
     chunks = _chunk(raw)
-    print(f"[ingest] {len(raw)} source docs → {len(chunks)} chunks")
+    print(f"[ingest] {len(raw)} source docs -> {len(chunks)} chunks")
 
     embeddings = HuggingFaceEmbeddings(
         model_name=EMBED_MODEL,
