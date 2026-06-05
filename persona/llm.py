@@ -6,8 +6,9 @@ Supports: openai | anthropic | groq
 All three expose the same OpenAI-compatible chat completion interface.
 """
 
+import json
 import os
-from typing import Iterator
+from typing import Any, Callable, Iterator
 
 from dotenv import load_dotenv
 
@@ -105,3 +106,100 @@ def stream(messages: list[dict], temperature: float = 0.3, max_tokens: int = 800
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta
+
+
+# ── Tool-using chat (function calling) ─────────────────────────────────────
+
+def chat_with_tools(
+    messages: list[dict],
+    tools: list[dict],
+    tool_handlers: dict[str, Callable[[dict], Any]],
+    temperature: float = 0.3,
+    max_tokens: int = 800,
+    max_rounds: int = 4,
+) -> tuple[str, list[str]]:
+    """
+    Run a chat completion that may invoke tools. Handles the full
+    LLM→tool→LLM loop until the model returns a final text answer.
+
+    Returns (final_text, tool_names_called).
+
+    `tools`         — OpenAI-format tool schemas (list of {type, function}).
+    `tool_handlers` — { tool_name: callable(args_dict) -> json-serializable result }.
+
+    Only supported for OpenAI-compatible providers (OpenAI, Groq).
+    Anthropic uses a different tool-calling shape; if you switch to it,
+    re-implement this for the messages.tool_use format.
+    """
+    if _PROVIDER == "anthropic":
+        # Fallback: Anthropic tool-use lives in a different API shape.
+        # For now, no tools — just call chat() and skip tooling.
+        return chat(messages, temperature=temperature, max_tokens=max_tokens), []
+
+    client = _get_client()
+    called: list[str] = []
+
+    # Work on a local copy so we don't mutate the caller's history
+    convo = list(messages)
+
+    for _round in range(max_rounds):
+        resp = client.chat.completions.create(
+            model=_MODEL,
+            messages=convo,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice="auto",
+        )
+        msg = resp.choices[0].message
+
+        # If the model called one or more tools, execute them and continue
+        if msg.tool_calls:
+            # Append the assistant's tool-call message itself to the convo
+            convo.append({
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ],
+            })
+            # Execute each tool and append its result
+            for tc in msg.tool_calls:
+                tool_name = tc.function.name
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                called.append(tool_name)
+
+                handler = tool_handlers.get(tool_name)
+                if handler is None:
+                    result: Any = {"error": f"unknown tool: {tool_name}"}
+                else:
+                    try:
+                        result = handler(args)
+                    except Exception as e:
+                        result = {"error": str(e)}
+
+                convo.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps(result, default=str),
+                })
+            # Loop again — let the model see the tool results and produce
+            # a final response (or call more tools).
+            continue
+
+        # No tool call — model returned final text
+        return (msg.content or "").strip(), called
+
+    # Exceeded max rounds — return whatever the last message had
+    return "I'm having trouble completing that — let me know if you'd like to try again.", called

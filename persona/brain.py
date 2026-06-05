@@ -25,12 +25,84 @@ from dotenv import load_dotenv
 from .ingest import build_index
 from .retriever import Retriever, RetrievedChunk
 from .prompts import build_prompt
-from .llm import chat, stream
-from .tools.booking import BookingTool, TimeSlot, BookingConfirmation
+from .llm import chat, stream, chat_with_tools
+from .tools.booking import BookingTool, TimeSlot, BookingConfirmation, EmailParseError
 
 load_dotenv()
 
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "corpus/faiss_index")
+
+
+# ── OpenAI tool schemas for the chat channel ───────────────────────────────
+# Voice uses LiveKit's @function_tool decorators; chat uses OpenAI's native
+# function calling. Both ultimately call BookingTool — same brain.
+_OPENAI_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "check_availability",
+            "description": (
+                "Look up Himesh's open interview slots over the next 7 days. "
+                "Call this when the user asks about availability or wants to "
+                "schedule a call. Returns a list of open 30-minute slots."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date_hint": {
+                        "type": "string",
+                        "description": (
+                            "Optional natural-language hint, e.g. 'this week', "
+                            "'Tuesday'. Leave empty for next 7 days."
+                        ),
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "book_slot",
+            "description": (
+                "Book a specific interview slot on Himesh's Cal.com calendar. "
+                "ONLY call this after the user has chosen a slot AND provided "
+                "their name and email. Do not assume an email — the user must "
+                "have given one."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_utc": {
+                        "type": "string",
+                        "description": (
+                            "UTC start time copied verbatim from a previous "
+                            "check_availability slot.utc_ref."
+                        ),
+                    },
+                    "attendee_name": {
+                        "type": "string",
+                        "description": "The user's full name.",
+                    },
+                    "attendee_email": {
+                        "type": "string",
+                        "description": (
+                            "The user's email address. Pass it exactly as the "
+                            "user gave it — the booking layer auto-normalizes "
+                            "spoken forms like 'at the rate' and 'dot'."
+                        ),
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Optional one-line context about the meeting.",
+                    },
+                },
+                "required": ["start_utc", "attendee_name", "attendee_email"],
+            },
+        },
+    },
+]
 
 
 @dataclass
@@ -65,6 +137,23 @@ class Brain:
         words = set(message.lower().split())
         return bool(words & self._BOOKING_KEYWORDS)
 
+    # Public alias — used by streaming endpoint to decide between
+    # streaming a normal answer vs. running the full booking flow.
+    def is_booking_intent(self, message: str) -> bool:
+        return self._is_booking_intent(message)
+
+    def prepare(self, message: str, history: List[dict]):
+        """
+        Retrieve corpus chunks + build the prompt without calling the LLM.
+        Returns (sources, prompt_messages). Use this when you want to stream
+        tokens yourself (e.g. SSE endpoint).
+        """
+        chunks = self._retriever.retrieve(message)
+        context = self._retriever.format_context(chunks)
+        sources = list({c.source for c in chunks})
+        prompt_messages = build_prompt(context, history, message)
+        return sources, prompt_messages
+
     # ── Main answer method ─────────────────────────────────────────────────
 
     def answer(
@@ -74,32 +163,95 @@ class Brain:
         temperature: float = 0.3,
     ) -> AnswerResult:
         """
-        Grounded answer to a message, given conversation history.
+        Grounded answer using OpenAI function calling for booking tools.
+
+        The LLM has access to two tools — check_availability and book_slot —
+        and decides when to call them. No keyword regex; tool use is real.
 
         Args:
             message: current user turn
             history: list of {"role": "user"|"assistant", "content": str}
-            temperature: passed to LLM (lower = more grounded)
+            temperature: passed to LLM
 
         Returns:
             AnswerResult with .text, .sources, and optionally .booking
         """
-        # 1. Retrieve relevant context
+        # 1. Retrieve relevant context for RAG grounding
         chunks: List[RetrievedChunk] = self._retriever.retrieve(message)
         context = self._retriever.format_context(chunks)
         sources = list({c.source for c in chunks})
 
-        # 2. Check for booking intent
-        if self._is_booking_intent(message):
-            booking_result = self._handle_booking(message, history, context, sources)
-            if booking_result:
-                return booking_result
-
-        # 3. Build prompt and call LLM
+        # 2. Build the prompt
         messages = build_prompt(context, history, message)
-        reply = chat(messages, temperature=temperature)
 
-        return AnswerResult(text=reply, sources=sources)
+        # 3. Make the booking tool result observable to the caller.
+        # Tool handlers run inside chat_with_tools and may produce a
+        # BookingConfirmation that the frontend should display.
+        captured_booking: List[BookingConfirmation] = []
+
+        def _handle_check_availability(args: dict) -> dict:
+            slots = self._booking.check_availability(date_hint=args.get("date_hint", ""))
+            return {
+                "slots": [
+                    {
+                        "utc_ref": s.start_utc,
+                        "human": s.formatted,
+                    }
+                    for s in slots[:6]
+                ]
+            }
+
+        def _handle_book_slot(args: dict) -> dict:
+            try:
+                conf = self._booking.book_slot(
+                    start_utc=args["start_utc"],
+                    attendee_name=args["attendee_name"],
+                    attendee_email=args["attendee_email"],
+                    notes=args.get("notes", ""),
+                )
+            except EmailParseError as e:
+                return {
+                    "ok": False,
+                    "error": "email_parse_failed",
+                    "message": (
+                        "I couldn't parse that email. Please ask the user to "
+                        "type it again with @ and . — for example "
+                        "'name@gmail.com'."
+                    ),
+                    "raw_email": args.get("attendee_email", ""),
+                    "best_guess": str(e),
+                }
+            except Exception as e:
+                return {
+                    "ok": False,
+                    "error": "booking_failed",
+                    "message": str(e),
+                }
+            captured_booking.append(conf)
+            return {
+                "ok": True,
+                "booking_id": conf.booking_id,
+                "title": conf.title,
+                "start": conf.start,
+                "meet_url": conf.meet_url,
+                "confirmation_message": conf.confirmation_message,
+            }
+
+        text, _called = chat_with_tools(
+            messages=messages,
+            tools=_OPENAI_TOOLS,
+            tool_handlers={
+                "check_availability": _handle_check_availability,
+                "book_slot": _handle_book_slot,
+            },
+            temperature=temperature,
+        )
+
+        return AnswerResult(
+            text=text,
+            sources=sources,
+            booking=captured_booking[0] if captured_booking else None,
+        )
 
     def stream_answer(
         self,

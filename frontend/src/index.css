@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base ───────────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01', 'ss03';
+  }
+  input, textarea, button {
+    @apply font-sans;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { background: #62626c; }
+  ::selection { background-color: rgba(52, 211, 153, 0.25); color: #f4f4f6; }
+}
+
+/* ── Reusable utilities ─────────────────────────────────────────────────── */
+@layer utilities {
+  /* Glass card surface — used by all elevated panels */
+  .glass {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0.0) 60%),
+      rgba(255, 255, 255, 0.015);
+    -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .glass-hover {
+    transition: border-color 200ms, background 200ms, box-shadow 200ms;
+  }
+  .glass-hover:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.0) 60%),
+      rgba(255, 255, 255, 0.022);
+  }
+
+  /* Gradient name text */
+  .name-gradient {
+    background: linear-gradient(180deg, #ffffff 0%, #b4b4be 100%);
+    -webkit-background-clip: text;
+            background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* Two-tone emerald → cyan text for accent highlights */
+  .accent-text {
+    background: linear-gradient(135deg, #34d399 0%, #2dd4bf 60%, #22d3ee 100%);
+    -webkit-background-clip: text;
+            background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* Hide LiveKit's built-in disconnect button — we ship our own */
+  .lk-disconnect-button { display: none; }
+}

@@ -70,7 +70,7 @@ except Exception:
 #   (b) the entrypoint job pool warms it once via prewarm_fnc, ahead of any
 #       call, so the first user turn isn't slowed by retriever cold-start.
 from persona.prompts import SYSTEM_PROMPT
-from persona.tools.booking import BookingTool
+from persona.tools.booking import BookingTool, EmailParseError
 
 logger = logging.getLogger("voice-agent")
 logging.basicConfig(level=logging.INFO)
@@ -90,6 +90,24 @@ VOICE-OUTPUT RULES (this conversation is being SPOKEN over a phone):
 - If you're about to call a tool (checking availability / booking), say one short
   filler phrase first so the caller hears something while the API runs:
   e.g. "Let me check my calendar real quick."
+
+BOOKING — EMAIL CONFIRMATION (CRITICAL):
+When the caller gives you their email aloud, the speech-to-text system writes
+it as natural language — "at" becomes "at the rate", "." becomes "dot",
+digits become words, and spaces appear between every token. BEFORE you call
+book_slot:
+1. Read the email back to the caller in a natural form, e.g.
+   "Just to confirm — that's prasoon raj seven two six at gmail dot com,
+   spelled P-R-A-S-O-O-N-R-A-J-7-2-6 at gmail.com — correct?"
+2. Wait for them to confirm yes / correct it.
+3. Only then call book_slot, and pass the email EXACTLY as the caller spoke
+   it (don't try to reformat it yourself — the booking system normalizes
+   spoken forms automatically).
+4. If the booking tool replies with "I had trouble understanding the email",
+   ask the caller to spell it letter by letter.
+
+This rule is non-negotiable. A wrong email means no calendar invite reaches
+the caller — the entire point of the booking flow.
 """
 
 
@@ -232,6 +250,16 @@ class HimeshAgent(Agent):
                 attendee_email=attendee_email,
                 notes=notes,
             )
+        except EmailParseError as e:
+            # STT mangled the email and our normalizer couldn't recover it.
+            # Surface a CLEAR action for the LLM so it asks the user to spell.
+            logger.warning("book_slot email parse failure: %s", e)
+            return (
+                "I had trouble understanding the email address. "
+                "Could you spell it letter by letter? For example, "
+                "'p as in peter, r, a, s, o, o, n, at gmail dot com'. "
+                "Once I have it I'll lock in the slot."
+            )
         except Exception as e:
             logger.exception("book_slot failed: %s", e)
             return (
@@ -295,13 +323,14 @@ async def entrypoint(ctx: JobContext) -> None:
         room=ctx.room,
     )
 
-    # Opening line — keep it short, sets expectations
-    await session.generate_reply(
-        instructions=(
-            "Greet the caller in one short sentence. Introduce yourself as Himesh's "
-            "AI representative and ask how you can help — interview-related questions, "
-            "deep-dive on the projects, or schedule a call. Keep it under 15 words."
-        ),
+    # Opening line — deterministic TTS so the greeting is identical on every
+    # call. Avoids occasional LLM gibberish at call start when we ask the
+    # model to "greet in one sentence" and it interprets that freely.
+    await session.say(
+        "Hi, I'm Himesh's AI representative — happy to help with questions "
+        "about his projects, background, or scheduling a call. What would "
+        "you like to know?",
+        allow_interruptions=True,
     )
 
 
@@ -324,5 +353,16 @@ if __name__ == "__main__":
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
             agent_name="himesh-persona",   # shows up in LiveKit Console dropdown + Twilio dispatch rule
+            # Cold-start tuning.
+            # Our prewarm loads sentence-transformers + FAISS + retriever and
+            # takes ~12s on first run. Default initialize_process_timeout is
+            # 10s, which caused the first job to timeout and retry — a 30s
+            # latency hit on the first call.
+            initialize_process_timeout=45.0,
+            # Keep one process warm and ready at all times. Means the first
+            # incoming call hits an already-loaded worker instead of paying
+            # the 12s setup cost. The cost is one always-running Python
+            # process — fine for our scale.
+            num_idle_processes=1,
         )
     )

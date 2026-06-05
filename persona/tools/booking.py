@@ -11,6 +11,7 @@ Timezone: Asia/Kolkata (IST, UTC+5:30)
 """
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
@@ -20,6 +21,78 @@ import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+# ── Email normalization ────────────────────────────────────────────────────
+# When the user speaks an email aloud, STT writes it as natural language:
+#   "prasoon raj seven two six at the rate gmail dot com"
+# We need to recover the actual address before sending to Cal.com. Without
+# this, every voice booking fails with HTTP 400 from Cal.com's email validator.
+
+_SPOKEN_NUMBERS = {
+    "zero": "0", "oh": "0", "one": "1", "two": "2", "three": "3",
+    "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8",
+    "nine": "9", "ten": "10", "double": "",   # "double oh" → "00" (handled below)
+}
+
+# Order matters — longer patterns first so "at the rate" matches before "at".
+_SPOKEN_SYMBOLS: list[tuple[str, str]] = [
+    (r"\bat\s+the\s+rate\s+of\b", "@"),
+    (r"\bat\s+the\s+rate\b",      "@"),
+    (r"\bat\s+sign\b",            "@"),
+    (r"\bat\s+symbol\b",          "@"),
+    (r"\bunder\s*score\b",        "_"),
+    (r"\bdot\b",                  "."),
+    (r"\bperiod\b",               "."),
+    (r"\bpoint\b",                "."),
+    (r"\bhyphen\b",               "-"),
+    (r"\bdash\b",                 "-"),
+    (r"\bminus\b",                "-"),
+    (r"\bplus\b",                 "+"),
+    # Plain "at" must come after symbol matches to avoid eating "@ at gmail"
+    (r"\bat\b",                   "@"),
+]
+
+# A relaxed email pattern — good enough for the API; Cal.com does the strict check
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+
+
+def normalize_email(raw: str) -> str:
+    """
+    Convert a spoken/typed email into the canonical form. Idempotent:
+    already-clean inputs ('john@gmail.com') pass through unchanged.
+
+        >>> normalize_email("prasoon raj seven two six at the rate gmail dot com")
+        'prasoonraj726@gmail.com'
+        >>> normalize_email("john.doe@example.com")
+        'john.doe@example.com'
+    """
+    s = raw.strip().lower()
+
+    # Replace spoken symbols (e.g. "at the rate" → "@", "dot" → ".")
+    for pattern, replacement in _SPOKEN_SYMBOLS:
+        s = re.sub(pattern, replacement, s)
+
+    # Replace word-numbers with digits, word by word
+    tokens = re.split(r"(\s+)", s)
+    out_tokens = []
+    for tok in tokens:
+        out_tokens.append(_SPOKEN_NUMBERS.get(tok, tok))
+    s = "".join(out_tokens)
+
+    # Strip all remaining whitespace
+    s = re.sub(r"\s+", "", s)
+
+    return s
+
+
+def is_valid_email(email: str) -> bool:
+    """Loose validation — Cal.com does the authoritative check."""
+    return bool(_EMAIL_RE.match(email))
+
+
+class EmailParseError(ValueError):
+    """Raised when an email can't be normalized to a valid address."""
 
 CALCOM_API_KEY       = os.getenv("CALCOM_API_KEY", "")
 CALCOM_EVENT_TYPE_ID = int(os.getenv("CALCOM_EVENT_TYPE_ID", "5911501"))
@@ -125,10 +198,24 @@ class BookingTool:
         notes: str = "",
         attendee_timezone: str = "Asia/Kolkata",
     ) -> BookingConfirmation:
-        """Book a confirmed slot."""
+        """
+        Book a confirmed slot.
+
+        `attendee_email` may arrive as a spoken phrase from STT
+        (e.g. "prasoon raj seven two six at the rate gmail dot com").
+        We normalize before sending to Cal.com; raises EmailParseError
+        if the result still doesn't look like an email.
+        """
+        cleaned = normalize_email(attendee_email)
+        if not is_valid_email(cleaned):
+            raise EmailParseError(
+                f"Could not parse '{attendee_email}' into a valid email. "
+                f"Best guess after cleanup: '{cleaned}'."
+            )
+
         if not CALCOM_API_KEY:
-            return self._stub_booking(start_utc, attendee_name, attendee_email)
-        return self._real_booking(start_utc, attendee_name, attendee_email, notes, attendee_timezone)
+            return self._stub_booking(start_utc, attendee_name, cleaned)
+        return self._real_booking(start_utc, attendee_name, cleaned, notes, attendee_timezone)
 
     # ── Cal.com API calls ───────────────────────────────────────────────────
 
