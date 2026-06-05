@@ -53,8 +53,53 @@ def _load_about_me() -> List[Document]:
     return docs
 
 
+def _semantic_prefix(fname: str, repo: str, text: str) -> str:
+    """
+    Wrap structured files with a natural-language preamble so semantic
+    retrieval can find them. Without this, a bare `requirements.txt`
+    (just package names) won't match a query like
+    "what dependencies does your MCP store use" because the bare
+    package-name list doesn't embed near the question's semantics.
+    """
+    name = fname.lower()
+
+    if name == "requirements.txt":
+        return (
+            f"Python package dependencies for the {repo} project. "
+            f"This is the requirements file listing every library the project depends on, "
+            f"including their pinned versions. The dependencies are:\n\n{text}"
+        )
+
+    if name == "file_tree.txt":
+        return (
+            f"File structure / directory layout of the {repo} project, "
+            f"showing how the codebase is organized:\n\n{text}"
+        )
+
+    if name == "git_log.txt":
+        return (
+            f"Recent git commit history of the {repo} project. "
+            f"Each line shows the short commit hash, the date, and the commit message. "
+            f"This is the changelog of what was implemented when:\n\n{text}"
+        )
+
+    if name == "readme.md" or name.endswith("_readme.md"):
+        return (
+            f"README documentation for the {repo} project, describing what it does, "
+            f"the architecture, how to use it, and the design decisions behind it:\n\n{text}"
+        )
+
+    if name.endswith(".md"):
+        section = Path(fname).stem.replace("_", " ").replace("-", " ")
+        return (
+            f"Documentation ('{section}') from the {repo} project:\n\n{text}"
+        )
+
+    return text
+
+
 def _load_github_corpus() -> List[Document]:
-    """Load all .md and .txt files under corpus/github/."""
+    """Load all .md and .txt files under corpus/github/, with semantic prefixes."""
     docs = []
     if not GITHUB_DIR.exists():
         print("[ingest] WARNING: corpus/github/ not found — run scripts/ingest_github.py first")
@@ -70,9 +115,13 @@ def _load_github_corpus() -> List[Document]:
             # derive repo name from directory structure: corpus/github/<repo>/...
             parts = fpath.relative_to(GITHUB_DIR).parts
             repo = parts[0] if parts else fpath.stem
+            text = _semantic_prefix(fpath.name, repo, text)
             docs.append(Document(
                 page_content=text,
-                metadata={"source": f"github:{repo}", "file": str(fpath.relative_to(GITHUB_DIR))},
+                metadata={
+                    "source": f"github:{repo}",
+                    "file": str(fpath.relative_to(GITHUB_DIR)),
+                },
             ))
         except Exception as e:
             print(f"[ingest] WARNING: could not load {fpath}: {e}")
