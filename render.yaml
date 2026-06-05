@@ -4,7 +4,7 @@ services:
     name: himesh-persona-api
     runtime: python
     region: oregon
-    plan: free
+    plan: starter           # always-on for the 7-day eval window; no cold-start spin-down
     buildCommand: |
       pip install -r requirements.txt
       python scripts/decode_corpus.py
