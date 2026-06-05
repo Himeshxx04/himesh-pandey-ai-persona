@@ -221,8 +221,9 @@ class HimeshAgent(Agent):
         return (
             "Here are the next openings I have:\n"
             + "\n".join(lines)
-            + "\n\nWhen the caller picks one, ask for their name and email, then call book_slot "
-              "with the exact utc_ref from above."
+            + "\n\nCRITICAL: when you call book_slot, the start_utc argument MUST be copied "
+              "CHARACTER-FOR-CHARACTER from one of the utc_ref values above. "
+              "Do NOT construct or guess a date — use only the exact utc_ref strings shown."
         )
 
     @function_tool
@@ -237,6 +238,7 @@ class HimeshAgent(Agent):
         """
         Book a confirmed slot on Himesh's Cal.com calendar.
         Only call AFTER the caller has chosen a slot AND given their name and email.
+        The start_utc MUST be an exact utc_ref string from check_availability — never construct one yourself.
         Returns a confirmation message safe to read aloud.
         """
         logger.info(

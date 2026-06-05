@@ -206,6 +206,20 @@ class BookingTool:
         We normalize before sending to Cal.com; raises EmailParseError
         if the result still doesn't look like an email.
         """
+        # Guard: reject slots in the past — LLM sometimes hallucinates old dates
+        # instead of using the utc_ref returned by check_availability.
+        try:
+            slot_dt = datetime.fromisoformat(start_utc.replace("Z", "+00:00"))
+            if slot_dt < datetime.now(timezone.utc):
+                raise ValueError(
+                    f"Slot {start_utc} is in the past. "
+                    "Please call check_availability first and use a utc_ref from that result."
+                )
+        except ValueError as e:
+            if "in the past" in str(e):
+                raise
+            # Malformed ISO string — let Cal.com catch it with a clearer error below
+
         cleaned = normalize_email(attendee_email)
         if not is_valid_email(cleaned):
             raise EmailParseError(
@@ -308,7 +322,12 @@ class BookingTool:
             json=body,
             timeout=20,
         )
-        resp.raise_for_status()
+        if not resp.is_success:
+            raise httpx.HTTPStatusError(
+                f"{resp.status_code} from Cal.com — body: {resp.text[:400]}",
+                request=resp.request,
+                response=resp,
+            )
         data = resp.json().get("data", {})
 
         # Parse start time for display
