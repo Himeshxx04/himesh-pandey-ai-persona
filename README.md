@@ -238,10 +238,6 @@ See `voice/README.md` for the LiveKit + Twilio SIP wiring playbook.
 
 ---
 
-## Submission
-
-Submitted to SCALER for the AI Engineer screening on **June 6, 2026**. Live for 7 days minimum after submission.
-
-Built with [Claude Code](https://docs.claude.com/claude-code) as pair-engineer. Hard architecture decisions, the latency engineering, the hallucination guard, the booking distribution fix, and the deployment debugging were all my calls — the AI made me 3x faster, not 3x lazier.
+## Contact
 
 — Himesh Pandey · pandeyhimesh09@gmail.com · [GitHub](https://github.com/Himeshxx04) · [LinkedIn](https://www.linkedin.com/in/himesh-pandey-66968a213/)
