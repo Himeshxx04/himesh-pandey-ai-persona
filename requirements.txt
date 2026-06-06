@@ -41,3 +41,6 @@ twilio>=9.0.0                      # for any direct Twilio API calls
 
 # Evals
 # (Phase 5 — standard library + openai judge)
+
+# Eval report PDF generation
+reportlab>=4.5.0

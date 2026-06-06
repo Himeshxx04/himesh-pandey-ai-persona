@@ -1,0 +1,14 @@
+{
+  "api_url": "https://himesh-persona-api.onrender.com",
+  "total_questions": 10,
+  "rag_questions": 8,
+  "guardrail_questions": 2,
+  "avg_groundedness_10": 8.5,
+  "avg_completeness_10": 6.25,
+  "hallucination_rate": 0.0,
+  "retrieval_precision": 0.604,
+  "retrieval_recall": 0.938,
+  "guardrail_pass_rate": 1.0,
+  "median_api_latency_ms": 1881,
+  "p95_api_latency_ms": 3558
+}
