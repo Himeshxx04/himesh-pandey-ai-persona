@@ -52,8 +52,11 @@ _OPENAI_TOOLS = [
                     "date_hint": {
                         "type": "string",
                         "description": (
-                            "Optional natural-language hint, e.g. 'this week', "
-                            "'Tuesday'. Leave empty for next 7 days."
+                            "Optional natural-language date filter that narrows "
+                            "results. Supported: 'tomorrow', 'today', day names "
+                            "('monday', 'wed'), specific dates ('jun 10'), or "
+                            "'this week' / 'next week'. Leave empty to see slots "
+                            "distributed across the next 14 days."
                         ),
                     },
                 },

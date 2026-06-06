@@ -205,7 +205,9 @@ class HimeshAgent(Agent):
         context: RunContext,
         date_hint: Annotated[
             str,
-            "Optional natural-language hint like 'this week' or 'Tuesday'. Leave blank for next 7 days."
+            "Optional natural-language date filter. Examples that work: "
+            "'tomorrow', 'monday', 'wednesday', 'jun 10', 'next week'. "
+            "Leave blank to see slots distributed across the next 14 days."
         ] = "",
     ) -> str:
         """

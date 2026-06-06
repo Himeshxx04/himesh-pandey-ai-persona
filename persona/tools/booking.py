@@ -181,14 +181,105 @@ class BookingTool:
     # ── Public API ──────────────────────────────────────────────────────────
 
     def check_availability(self, date_hint: str = "") -> List[TimeSlot]:
-        """Return available slots for the next 7 days (or 14 if fewer than 3 found)."""
+        """
+        Return available slots for the next 7 days (or 14 if fewer than 3 found).
+
+        If `date_hint` matches a day in the result set (e.g. 'tomorrow',
+        'Wednesday', 'Jun 10', 'next week'), narrow the returned slots to
+        only that day/range. Falls back to the full distributed set if the
+        hint doesn't parse.
+        """
         if not CALCOM_API_KEY:
             return self._stub_slots()
 
-        slots = self._fetch_slots(days=7)
-        if len(slots) < 3:
-            slots = self._fetch_slots(days=14)
+        # Fetch a wider window so date hints can land on future days too.
+        slots = self._fetch_slots(days=14)
+        if not slots:
+            slots = self._fetch_slots(days=21)
+
+        if date_hint:
+            filtered = self._filter_slots_by_hint(slots, date_hint)
+            # Use filtered result only if non-empty; otherwise show everything
+            # so caller doesn't think nothing is available.
+            if filtered:
+                return filtered
+
         return slots
+
+    def _filter_slots_by_hint(self, slots: List[TimeSlot], hint: str) -> List[TimeSlot]:
+        """
+        Best-effort natural-language date filter. Examples that work:
+          'tomorrow' / 'today'
+          'monday', 'tue', 'wednesday' (any day name)
+          'jun 10', 'june 10', '10th'
+        Anything we can't parse → returns [] so caller falls back.
+        """
+        hint = hint.lower().strip()
+        if not hint:
+            return []
+
+        now_ist = datetime.now(IST)
+
+        # Build set of acceptable date strings in IST (YYYY-MM-DD)
+        targets: set[str] = set()
+
+        # "tomorrow"
+        if "tomorrow" in hint:
+            targets.add((now_ist + timedelta(days=1)).strftime("%Y-%m-%d"))
+        # "today"
+        if "today" in hint or "tonight" in hint:
+            targets.add(now_ist.strftime("%Y-%m-%d"))
+        # "this week" — next 5 weekdays
+        if "this week" in hint or "next week" in hint:
+            offset = 7 if "next week" in hint else 0
+            for d in range(offset, offset + 7):
+                targets.add((now_ist + timedelta(days=d)).strftime("%Y-%m-%d"))
+
+        # Day names → find next matching weekday in the 14-day window
+        day_names = {
+            "monday": 0, "mon": 0,
+            "tuesday": 1, "tue": 1, "tues": 1,
+            "wednesday": 2, "wed": 2,
+            "thursday": 3, "thu": 3, "thurs": 3,
+            "friday": 4, "fri": 4,
+            "saturday": 5, "sat": 5,
+            "sunday": 6, "sun": 6,
+        }
+        for name, weekday_idx in day_names.items():
+            if name in hint:
+                for d in range(0, 14):
+                    candidate = now_ist + timedelta(days=d)
+                    if candidate.weekday() == weekday_idx:
+                        targets.add(candidate.strftime("%Y-%m-%d"))
+                        break
+
+        # Month-day pattern: "jun 10", "june 10", "10 jun"
+        months = {
+            "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+            "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6,
+            "jul": 7, "july": 7, "aug": 8, "august": 8,
+            "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
+            "nov": 11, "november": 11, "dec": 12, "december": 12,
+        }
+        day_num = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\b", hint)
+        for mon_name, mon_idx in months.items():
+            if mon_name in hint and day_num:
+                day = int(day_num.group(1))
+                year = now_ist.year
+                # if month already passed this year, assume next year
+                if mon_idx < now_ist.month:
+                    year += 1
+                targets.add(f"{year:04d}-{mon_idx:02d}-{day:02d}")
+
+        if not targets:
+            return []
+
+        # Filter slots whose IST date matches any target
+        return [
+            s for s in slots
+            if datetime.fromisoformat(s.start_utc.replace("Z", "+00:00"))
+               .astimezone(IST).strftime("%Y-%m-%d") in targets
+        ]
 
     def book_slot(
         self,
@@ -257,15 +348,24 @@ class BookingTool:
         resp.raise_for_status()
         data = resp.json()
 
-        slots: List[TimeSlot] = []
-        for _date, day_slots in (data.get("data", {}).get("slots", {}).items()):
+        # Group slots by date and DISTRIBUTE across days so the LLM sees
+        # variety. Previously slots[:8] could return all 8 from a single
+        # popular day, hiding availability on every other day in the window.
+        slots_by_date: dict[str, List[TimeSlot]] = {}
+        for date_str, day_slots in data.get("data", {}).get("slots", {}).items():
             for s in day_slots:
-                utc_str = s["time"]
-                slot = self._parse_slot(utc_str)
-                slots.append(slot)
+                slot = self._parse_slot(s["time"])
+                slots_by_date.setdefault(date_str, []).append(slot)
 
-        # Return up to 8 slots to avoid overwhelming the user
-        return slots[:8]
+        # Take the first 2 slots per available day, sorted chronologically.
+        # Caps at ~12 total so the LLM can present them concisely.
+        result: List[TimeSlot] = []
+        for date_str in sorted(slots_by_date.keys()):
+            day_slots = slots_by_date[date_str]
+            result.extend(day_slots[:2])
+            if len(result) >= 12:
+                break
+        return result
 
     def _parse_slot(self, utc_str: str) -> TimeSlot:
         """Convert UTC ISO string to TimeSlot with IST display."""
