@@ -11,6 +11,8 @@ services:
       python -c "from persona.ingest import build_index; build_index(force=True)"
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6        # 3.14 is Render default but has no wheels for pydantic-core/torch yet
       - key: LLM_PROVIDER
         value: openai
       - key: LLM_MODEL
@@ -59,6 +61,8 @@ services:
       python -c "from persona.ingest import build_index; build_index(force=True)"
     startCommand: python voice/agent.py start
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6        # 3.14 is Render default but has no wheels for pydantic-core/torch yet
       - key: LLM_PROVIDER
         value: openai
       - key: LLM_MODEL
