@@ -7,15 +7,10 @@ services:
     plan: starter           # always-on for the 7-day eval window; no cold-start spin-down
     buildCommand: |
       pip install -r requirements.txt
-      python scripts/decode_corpus.py
       python scripts/ingest_github.py
       python -c "from persona.ingest import build_index; build_index(force=True)"
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: RESUME_B64
-        sync: false          # base64 of resume.pdf — generate with: base64 -w0 corpus/resume.pdf
-      - key: ABOUT_ME_B64
-        sync: false          # base64 of corpus/about_me.md
       - key: LLM_PROVIDER
         value: openai
       - key: LLM_MODEL
@@ -59,16 +54,11 @@ services:
     plan: starter           # always-on required; free plan spins down
     buildCommand: |
       pip install -r requirements.txt
-      python scripts/decode_corpus.py
       python voice/agent.py download-files
       python scripts/ingest_github.py
       python -c "from persona.ingest import build_index; build_index(force=True)"
     startCommand: python voice/agent.py start
     envVars:
-      - key: RESUME_B64
-        sync: false
-      - key: ABOUT_ME_B64
-        sync: false
       - key: LLM_PROVIDER
         value: openai
       - key: LLM_MODEL

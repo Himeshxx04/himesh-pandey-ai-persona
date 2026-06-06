@@ -1,10 +1,12 @@
 # Secrets
 .env
 
-# Corpus — personal data, not for public repo
-corpus/resume.pdf
-corpus/about_me.md
+# Corpus — resume.pdf and about_me.md are now committed so Render can
+# build without hitting ARG_MAX when base64-encoded as env vars (558KB+).
+# These files are already public information (LinkedIn / professional copy).
 corpus/github/
+corpus/resume_b64.txt
+corpus/about_me_b64.txt
 
 # FAISS index (built from corpus at runtime)
 corpus/faiss_index/
