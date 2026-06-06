@@ -53,7 +53,9 @@ services:
     name: himesh-persona-voice
     runtime: python
     region: oregon
-    plan: starter           # always-on required; free plan spins down
+    plan: standard          # 2GB RAM. Starter's 512MB OOM'd during call setup
+                            # (torch + sentence-transformers + FAISS + livekit + VAD + turn-detector
+                            #  ~= 600MB resident peak per call).
     buildCommand: |
       pip install -r requirements.txt
       python voice/agent.py download-files
