@@ -4,9 +4,12 @@
 
 **Live now:**
 - 💬 **Chat:** https://himesh-pandey-ai-persona.vercel.app
-- 📞 **Phone:** +1 (937) 888-3660 *(US number — international rates apply)*
-- 🌐 **Browser call:** click "Call this agent" on the chat page
+- 📞 **Phone (direct):** +1 (937) 888-3660 *(US number — requires international calling on your line)*
+- 🇮🇳 **No international calling? Use "Have the agent call you"** on the chat page — enter your Indian (+91) or US (+1) number and the agent dials you. **No international rates on your side, $0 to you.** This is the path I'd suggest for evaluators based in India.
+- 🌐 **In-browser call (no phone needed):** click "Call this agent" on the chat page — connects over WebRTC, works from any device with a microphone.
 - 📂 **Repo:** https://github.com/Himeshxx04/himesh-pandey-ai-persona
+
+> **Why a US number?** Twilio can't provision +91 Indian numbers fast enough for this build. So I picked a US number for the direct line, and built two zero-cost alternatives for callers who don't have IDD: an outbound callback (agent dials you) and a browser WebRTC call. All three routes hit the **same** LiveKit voice agent — same Brian voice, same RAG, same booking flow.
 
 ---
 
