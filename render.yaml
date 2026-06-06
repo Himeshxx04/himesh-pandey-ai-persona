@@ -4,7 +4,10 @@ services:
     name: himesh-persona-api
     runtime: python
     region: oregon
-    plan: starter           # always-on for the 7-day eval window; no cold-start spin-down
+    plan: standard          # 2GB RAM. Starter's 512MB OOM'd loading the brain:
+                            # FastAPI + uvicorn ~80MB + sentence-transformers/torch
+                            # ~250MB + FAISS retriever ~150MB ~= 480-550MB peak,
+                            # right at the Starter ceiling.
     buildCommand: |
       pip install -r requirements.txt
       python scripts/ingest_github.py
