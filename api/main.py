@@ -43,11 +43,22 @@ def get_brain():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Warm up the brain (loads FAISS index + embeddings model) at startup
-    # so the first /ask call isn't slow.
-    print("[api] Warming up persona brain...")
-    get_brain()
-    print("[api] Brain ready.")
+    # Warm the brain in the BACKGROUND so the port binds immediately and
+    # passes Render's 90s port-scan timeout. Loading sentence-transformers
+    # + FAISS + embeddings synchronously takes ~60-120s on a 0.5 CPU
+    # Starter instance, which exceeds that window and kills the deploy.
+    #
+    # First /ask request after deploy may wait briefly if the warmup
+    # hasn't finished; thereafter the brain stays cached in-process.
+    import asyncio
+    async def _warm():
+        try:
+            print("[api] Warming up persona brain (background)...", flush=True)
+            await asyncio.to_thread(get_brain)
+            print("[api] Brain ready.", flush=True)
+        except Exception as e:
+            print(f"[api] Brain warmup failed: {e}", flush=True)
+    asyncio.create_task(_warm())
     yield
 
 
