@@ -95,7 +95,7 @@ class EmailParseError(ValueError):
     """Raised when an email can't be normalized to a valid address."""
 
 CALCOM_API_KEY       = os.getenv("CALCOM_API_KEY", "")
-CALCOM_EVENT_TYPE_ID = int(os.getenv("CALCOM_EVENT_TYPE_ID", "5911501"))
+CALCOM_EVENT_TYPE_ID = int(os.getenv("CALCOM_EVENT_TYPE_ID", "5937335"))
 CALCOM_USERNAME      = os.getenv("CALCOM_USERNAME", "himesh-pandey-hvlicb")
 CALCOM_BASE          = "https://api.cal.com/v2"
 IST                  = ZoneInfo("Asia/Kolkata")
