@@ -326,11 +326,44 @@ class Brain:
         # it has the slot, name, and email but re-checks availability instead
         # of just calling book_slot. We detect this exact situation and force
         # tool_choice = book_slot so the model has no option but to execute.
-        force_tool = (
-            "book_slot"
-            if self._should_force_book_slot(message, history)
-            else None
-        )
+        #
+        # ALSO: the conversation history from the frontend is text-only and
+        # does NOT carry tool I/O across turns, so the LLM has no real utc_ref
+        # to copy when book_slot is forced. It hallucinates dates (often with
+        # the wrong year). We fix this by pre-fetching fresh slots and
+        # injecting them into the prompt as a system message with explicit
+        # "use this verbatim" instructions.
+        force_tool: Optional[str] = None
+        if self._should_force_book_slot(message, history):
+            force_tool = "book_slot"
+            try:
+                fresh = self._booking.check_availability(date_hint="")
+            except Exception:
+                fresh = []
+            if fresh:
+                slot_lines = "\n".join(
+                    f"- {s.formatted}   utc_ref={s.start_utc}"
+                    for s in fresh[:10]
+                )
+                # Inject as the LAST message so it's freshest in the LLM's view
+                messages = messages + [{
+                    "role": "system",
+                    "content": (
+                        "[BOOKING COMPLETION TURN — read carefully]\n"
+                        "The user has just provided their name and email. "
+                        "Earlier they picked a slot. Here are the REAL "
+                        "currently-available slots (refreshed from Cal.com):\n"
+                        f"{slot_lines}\n\n"
+                        "Match the user's chosen slot to the closest entry "
+                        "above and call book_slot with that EXACT utc_ref "
+                        "string (copy character-for-character — do NOT "
+                        "construct your own date). Pass the user's name and "
+                        "email exactly as they wrote them. If no row above "
+                        "matches what they asked for, call book_slot with "
+                        "the closest match — the past-date guard will reject "
+                        "wrong dates."
+                    ),
+                }]
 
         text, called = chat_with_tools(
             messages=messages,
