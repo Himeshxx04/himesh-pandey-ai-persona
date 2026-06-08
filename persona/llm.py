@@ -117,6 +117,7 @@ def chat_with_tools(
     temperature: float = 0.3,
     max_tokens: int = 800,
     max_rounds: int = 4,
+    force_first_tool: str | None = None,
 ) -> tuple[str, list[str]]:
     """
     Run a chat completion that may invoke tools. Handles the full
@@ -126,6 +127,11 @@ def chat_with_tools(
 
     `tools`         — OpenAI-format tool schemas (list of {type, function}).
     `tool_handlers` — { tool_name: callable(args_dict) -> json-serializable result }.
+    `force_first_tool` — if set, the FIRST round forces tool_choice to this
+                         specific function name. Subsequent rounds use "auto".
+                         Use to break gpt-4o-mini's indecision on multi-turn
+                         flows (e.g. force book_slot when user has provided
+                         slot+name+email but the model keeps second-guessing).
 
     Only supported for OpenAI-compatible providers (OpenAI, Groq).
     Anthropic uses a different tool-calling shape; if you switch to it,
@@ -143,13 +149,23 @@ def chat_with_tools(
     convo = list(messages)
 
     for _round in range(max_rounds):
+        # Force a specific tool ONLY on the first round, if requested.
+        # After the tool runs, we want the model free to format the result.
+        if _round == 0 and force_first_tool:
+            tool_choice: Any = {
+                "type": "function",
+                "function": {"name": force_first_tool},
+            }
+        else:
+            tool_choice = "auto"
+
         resp = client.chat.completions.create(
             model=_MODEL,
             messages=convo,
             temperature=temperature,
             max_tokens=max_tokens,
             tools=tools,
-            tool_choice="auto",
+            tool_choice=tool_choice,
         )
         msg = resp.choices[0].message
 

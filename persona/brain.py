@@ -168,6 +168,48 @@ class Brain:
     def is_booking_intent(self, message: str, history: List[dict] = None) -> bool:
         return self._is_booking_intent(message, history)
 
+    # ── Forced-tool detection for the booking-completion turn ──────────────
+    _EMAIL_REQUEST_MARKERS = (
+        "email", "your name", "full name", "name and email",
+        "email address",
+    )
+    _SLOT_LISTING_MARKERS = (
+        "ist", "available slots", "open slots", "pick one",
+        "9:00 am", "9:30 am", "10:00 am", "10:30 am",
+        "noted your choice", "noted that slot",
+    )
+
+    def _should_force_book_slot(self, message: str, history: List[dict]) -> bool:
+        """
+        Detect the booking-completion turn — user just provided their email
+        in response to the assistant asking for it, AND slots have been shown
+        earlier in the conversation. If yes, force book_slot tool_choice so
+        gpt-4o-mini cannot dodge into another check_availability round.
+        """
+        # User must include an email signal in this turn
+        if "@" not in message:
+            return False
+        if not history:
+            return False
+        # Last assistant turn must have asked for email/name
+        last_assistant = ""
+        for turn in reversed(history):
+            if turn.get("role") == "assistant":
+                last_assistant = (turn.get("content") or "").lower()
+                break
+        if not last_assistant:
+            return False
+        if not any(m in last_assistant for m in self._EMAIL_REQUEST_MARKERS):
+            return False
+        # Slots must have been shown earlier somewhere in history
+        for turn in history:
+            if turn.get("role") != "assistant":
+                continue
+            content = (turn.get("content") or "").lower()
+            if any(m in content for m in self._SLOT_LISTING_MARKERS):
+                return True
+        return False
+
     def prepare(self, message: str, history: List[dict]):
         """
         Retrieve corpus chunks + build the prompt without calling the LLM.
@@ -279,6 +321,17 @@ class Brain:
                 "confirmation_message": conf.confirmation_message,
             }
 
+        # ── Forced tool detection ──────────────────────────────────────────
+        # gpt-4o-mini sometimes gets indecisive on multi-turn booking flows:
+        # it has the slot, name, and email but re-checks availability instead
+        # of just calling book_slot. We detect this exact situation and force
+        # tool_choice = book_slot so the model has no option but to execute.
+        force_tool = (
+            "book_slot"
+            if self._should_force_book_slot(message, history)
+            else None
+        )
+
         text, called = chat_with_tools(
             messages=messages,
             tools=_OPENAI_TOOLS,
@@ -287,6 +340,7 @@ class Brain:
                 "book_slot": _handle_book_slot,
             },
             temperature=temperature,
+            force_first_tool=force_tool,
         )
 
         # ── Hallucination guard ────────────────────────────────────────────
