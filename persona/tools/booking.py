@@ -94,6 +94,16 @@ def is_valid_email(email: str) -> bool:
 class EmailParseError(ValueError):
     """Raised when an email can't be normalized to a valid address."""
 
+
+class BookingUnavailableError(RuntimeError):
+    """
+    Raised when the Cal.com booking infrastructure itself is broken
+    (event type deleted, API key invalid, endpoint moved). The LLM
+    should surface this honestly to the user — NEVER fabricate slots
+    or claim a booking happened. Recovery requires a human (Himesh)
+    to fix Cal.com config.
+    """
+
 CALCOM_API_KEY       = os.getenv("CALCOM_API_KEY", "")
 CALCOM_EVENT_TYPE_ID = int(os.getenv("CALCOM_EVENT_TYPE_ID", "5937335"))
 CALCOM_USERNAME      = os.getenv("CALCOM_USERNAME", "himesh-pandey-hvlicb")
@@ -345,6 +355,15 @@ class BookingTool:
             params=params,
             timeout=15,
         )
+        # Distinguish "Cal.com is misconfigured" (404 event type, 401 bad key)
+        # from transient errors. The former should NEVER trigger LLM
+        # hallucination of fake slots — surface honestly to the user.
+        if resp.status_code in (401, 403, 404):
+            raise BookingUnavailableError(
+                f"Cal.com /slots/available returned {resp.status_code}. "
+                f"Likely cause: event type {CALCOM_EVENT_TYPE_ID} no longer exists "
+                f"or API key invalid. Body: {resp.text[:200]}"
+            )
         resp.raise_for_status()
         data = resp.json()
 

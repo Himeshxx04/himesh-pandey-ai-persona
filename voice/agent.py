@@ -70,7 +70,7 @@ except Exception:
 #   (b) the entrypoint job pool warms it once via prewarm_fnc, ahead of any
 #       call, so the first user turn isn't slowed by retriever cold-start.
 from persona.prompts import SYSTEM_PROMPT
-from persona.tools.booking import BookingTool, EmailParseError
+from persona.tools.booking import BookingTool, EmailParseError, BookingUnavailableError
 
 logger = logging.getLogger("voice-agent")
 logging.basicConfig(level=logging.INFO)
@@ -237,6 +237,15 @@ class HimeshAgent(Agent):
         logger.info("tool: check_availability(date_hint=%r)", date_hint)
         try:
             slots = _booking.check_availability(date_hint=date_hint)
+        except BookingUnavailableError as e:
+            # Cal.com is misconfigured. NEVER let the LLM make up slots.
+            logger.error("check_availability: Cal.com infrastructure error: %s", e)
+            return (
+                "My booking system is having an issue right now and I genuinely "
+                "cannot read my calendar. Please do NOT make up any times for the caller. "
+                "Apologize honestly, offer to take their email so I can follow up manually, "
+                "and tell them they can email me directly at pandeyhimesh09@gmail.com."
+            )
         except Exception as e:
             logger.exception("check_availability failed: %s", e)
             return (

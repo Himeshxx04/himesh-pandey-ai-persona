@@ -26,7 +26,7 @@ from .ingest import build_index
 from .retriever import Retriever, RetrievedChunk
 from .prompts import build_prompt
 from .llm import chat, stream, chat_with_tools
-from .tools.booking import BookingTool, TimeSlot, BookingConfirmation, EmailParseError
+from .tools.booking import BookingTool, TimeSlot, BookingConfirmation, EmailParseError, BookingUnavailableError
 
 load_dotenv()
 
@@ -216,7 +216,23 @@ class Brain:
         captured_booking: List[BookingConfirmation] = []
 
         def _handle_check_availability(args: dict) -> dict:
-            slots = self._booking.check_availability(date_hint=args.get("date_hint", ""))
+            try:
+                slots = self._booking.check_availability(date_hint=args.get("date_hint", ""))
+            except BookingUnavailableError as e:
+                # Cal.com infrastructure is broken. NEVER let the LLM invent
+                # slots — return an explicit error+instruction.
+                return {
+                    "ok": False,
+                    "error": "booking_system_down",
+                    "instruction_to_assistant": (
+                        "The booking system is currently misconfigured on my end "
+                        "(Cal.com error). DO NOT invent or list any time slots. "
+                        "Apologize honestly to the user and offer to take their email "
+                        "so I can book the call manually and follow up. "
+                        "Email me directly at pandeyhimesh09@gmail.com."
+                    ),
+                    "details": str(e)[:200],
+                }
             return {
                 "slots": [
                     {
