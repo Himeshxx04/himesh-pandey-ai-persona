@@ -162,22 +162,43 @@ class HimeshAgent(Agent):
         super().__init__(
             instructions=SYSTEM_PROMPT + VOICE_OUTPUT_RULES,
         )
+        # ── Booking hallucination guards ───────────────────────────────────
+        # Track conversation evidence so book_slot can refuse when the LLM
+        # is hallucinating a confirmation without the caller actually
+        # providing required info. Per-call (one Agent instance per call).
+        self._user_said_email_marker: bool = False
+        self._user_said_name_marker: bool = False
+        self._slots_were_listed: bool = False
 
-    # ── RAG hook: runs before the LLM responds to each user turn ───────────
+    # ── RAG + booking-context tracker (runs on every user turn) ────────────
     async def on_user_turn_completed(
         self,
         turn_ctx: ChatContext,
         new_message: ChatMessage,
     ) -> None:
         """
-        After the user finishes speaking and STT produces a transcript,
-        retrieve relevant corpus chunks and inject them as a system message
-        in the chat context BEFORE the LLM generates its reply.
+        After the user finishes speaking and STT produces a transcript:
+          1. Retrieve corpus chunks (RAG) and inject as system context.
+          2. Track whether the caller has provided email + name evidence
+             so book_slot can refuse hallucinated bookings.
         """
         user_text = new_message.text_content
         if not user_text:
             return
 
+        # ── (2) Booking evidence tracking ──────────────────────────────────
+        lower = user_text.lower()
+        # Spoken email signals — STT renders @ as 'at' or 'at the rate', . as 'dot'
+        email_signals = ("@", " at ", " at the rate", " dot com", " dot in", " gmail", " yahoo", " outlook", " hotmail")
+        if any(s in lower for s in email_signals):
+            self._user_said_email_marker = True
+            logger.info("booking-guard: detected email signal in user turn")
+        # Name signal — at least 2 capitalized words OR explicit "my name is"
+        if "my name is" in lower or "i am " in lower or "this is " in lower:
+            self._user_said_name_marker = True
+            logger.info("booking-guard: detected name signal in user turn")
+
+        # ── (1) RAG retrieval ──────────────────────────────────────────────
         try:
             retriever = _get_retriever()
             chunks = retriever.retrieve(user_text)
@@ -195,8 +216,6 @@ class HimeshAgent(Agent):
                 )
         except Exception as e:
             logger.exception("RAG retrieval failed: %s", e)
-            # Don't crash the turn — let the LLM answer ungrounded with the system prompt
-            # telling it to admit when it doesn't know.
 
     # ── Function tools: Cal.com booking ────────────────────────────────────
     @function_tool
@@ -224,6 +243,10 @@ class HimeshAgent(Agent):
                 "I had trouble reaching my calendar just now. "
                 "Could you tell me your preferred day and time and I'll confirm by email?"
             )
+
+        # Track that slots were shown — book_slot guard requires this
+        # before it'll accept a booking attempt.
+        self._slots_were_listed = True
 
         if not slots:
             return (
@@ -264,6 +287,31 @@ class HimeshAgent(Agent):
             "tool: book_slot(start=%s, name=%s, email=%s)",
             start_utc, attendee_name, attendee_email,
         )
+
+        # ── Hallucination guard ────────────────────────────────────────────
+        # gpt-4o-mini occasionally invokes book_slot without ever asking the
+        # caller for their email (or asks only for name then fakes confirmation).
+        # We refuse if conversation evidence doesn't support the call.
+        if not self._slots_were_listed:
+            logger.warning("booking-guard: book_slot called before any check_availability")
+            return (
+                "I should check the calendar first before booking. "
+                "Let me look up what times are available — one moment."
+            )
+        if not self._user_said_email_marker:
+            logger.warning("booking-guard: book_slot called but no email evidence in conversation")
+            return (
+                "I haven't gotten the caller's email yet. "
+                "Ask the caller for their email address, wait for them to spell or say it, "
+                "read it back to confirm, then call book_slot again with the confirmed email."
+            )
+        if not self._user_said_name_marker and len(attendee_name.split()) < 2:
+            logger.warning("booking-guard: book_slot called but no name evidence in conversation")
+            return (
+                "I'm not sure the caller has given their full name. "
+                "Ask them for their full name first, then call book_slot."
+            )
+
         try:
             confirmation = _booking.book_slot(
                 start_utc=start_utc,
